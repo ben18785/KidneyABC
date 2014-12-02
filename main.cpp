@@ -3,26 +3,35 @@
 // Declare global variables
 const int U = 100;
 areaParams aAreaParams;
-int iSeed = int(time(0));
-default_random_engine generator(iSeed);
 cellHolders cell;
 epitheliumLocations aEpLocation;
+totals aTotals;
+ostringstream os;ofstream GDNF, CellLocations;
 
 int main()
 {
     aAreaParams.iSize = U;
     aAreaParams.dMesenchymeDensity = 0.1;
     aAreaParams.iNumMesenchyme = fNumMesenchyme(aAreaParams.iSize,aAreaParams.dMesenchymeDensity);
-    MatrixXi mArea = fCreateInitialArea(aAreaParams.iSize,250,U/2,U/2,aAreaParams.dMesenchymeDensity,cell,aEpLocation);
+    MatrixXi mArea = fCreateInitialArea(aAreaParams.iSize,100,U/2,U/2,aAreaParams.dMesenchymeDensity,cell,aEpLocation,aTotals);
     MatrixXd mGDNF = fFieldUpdate(mArea, cell, aAreaParams);
+    vector<MatrixXi> aMovieHolderCell;
+    vector<MatrixXd> aMovieHolderGDNF;
+
+    int iT = 100;
+    for (int t = 0; t < iT; ++t)
+    {
+        cout<<t<<"\n";
+        fUpdateEpithelium(mGDNF,mArea,cell,aAreaParams,aEpLocation,aTotals);
+        mGDNF = fFieldUpdate(mArea,cell,aAreaParams);
+        aMovieHolderCell.push_back(mArea);
+        aMovieHolderGDNF.push_back(mGDNF);
+    }
+
+    string fileNameCell = "Results-CellLocations.txt";
+    string fileNameGDNF = "Results-GDNF.txt";
+    WriteVectorToFile(aMovieHolderCell,fileNameCell, iT);
+    WriteVectorToFile(aMovieHolderGDNF,fileNameGDNF, iT);
 
     return 0;
 }
-
-double fRandUniformDouble()
-{
-    uniform_real_distribution<double> uDistribution(0.0,1.0);
-    double dRand = uDistribution(generator);
-    return dRand;
-}
-
