@@ -9,7 +9,7 @@
 #include <time.h>
 #include <list>
 #include <Eigen/Sparse>
-//#include <Eigen/IterativeLinearSolvers>
+#include <Eigen/IterativeLinearSolvers>
 #include <Eigen/SparseCholesky>
 #include <unsupported/Eigen/SparseExtra>
 #include <algorithm>
@@ -52,6 +52,18 @@ int fMoveOrProlif (int, int, MatrixXi &, const MatrixXd &, const areaParams &);
 void fMoveProlifEpithelium(int, int, int,MatrixXi &, const areaParams &, epithelium &, epitheliumLocations &,cellHolders &, totals &);
 int RandomInteger(int,int);
 int isSamePoint(int, int, int, int);
+SpMatrix Laplace(int);
+SpMatrix LaplaceNeumann(int);
+
+extern const int U;
+static SpMatrix mA = LaplaceNeumann(U);
+SimplicialLLT<SparseMatrix<double>> solver;
+int iNearestNeighbours = 8;
+
+void solveLinearSystem()
+{
+    solver.analyzePattern(mA);   // for this step the numerical values of A are not used
+}
 
 
 struct areaParams
@@ -61,9 +73,9 @@ struct areaParams
     int iNumMesenchyme;
     double dDg = 100.0;
     double dGamma = 1;
-    double dPMoveVsPProlif = 0;
-    double dMoveProlifC0 = -5;
-    double dMoveProlifC1 = 8;
+    double dPMoveVsPProlif = 0.5;
+    double dMoveProlifC0 = -10;
+    double dMoveProlifC1 = 7;
     int iChemotaxis = 0;
 };
 
@@ -212,6 +224,7 @@ int fNumMesenchyme(int iSize, double dMesenchymeDensity)
 
 MatrixXi fCreateInitialArea(const int iSize, const int iNumEpithelium, const int iXstart, const int iYstart, const double dMesenchymeDensity, cellHolders &aCell, epitheliumLocations &aEpitheliumLocation, totals &aTotals)
 {
+    solveLinearSystem();
     int iNumMesenchyme = fNumMesenchyme(iSize,dMesenchymeDensity);
     MatrixXi aArea = MatrixXi::Zero(iSize,iSize);
     fCreateRandomEpithelium(iNumEpithelium, iXstart, iYstart, aArea, aEpitheliumLocation, aCell, aTotals);
@@ -319,13 +332,12 @@ int fActiveConnected(const int aX, const int aY, const int bX, const int bY, con
     MatrixXi mIndices = fAllIndices4Neighbours(bX,bY,mArea);
     int cConnected = 0;
 
+
     if (iMove == 1) // Move
     {
-        MatrixXi mAreaCopyTemp = mArea;
-        mAreaCopyTemp(aX,aY) = 0;
         for (int i = 0; i < 4; i++)
-        {
-            if (mAreaCopyTemp(mIndices(i,0),mIndices(i,1))== 1)
+        {   //Rather than make a copy, we will check to see that the connected cell is not the original (as it has moved)
+            if (mArea(mIndices(i,0),mIndices(i,1))== 1 && (mIndices(i,0)!=aX && mIndices(i,1)!=aY))
             {
                 cConnected = 1;
                 return cConnected;
@@ -350,11 +362,20 @@ int fActiveConnected(const int aX, const int aY, const int bX, const int bY, con
 //Find any vacant cells around a given position
 MatrixXi fFindAnyVacant(const int aX, const int aY, MatrixXi &aArea)
 {
-    MatrixXi mIndices = fAllIndices4Neighbours(aX,aY,aArea);
-    MatrixXi mAllowed = MatrixXi::Zero(4,2);
+    MatrixXi mIndices;
+    if (iNearestNeighbours==4)
+    {
+        mIndices = fAllIndices8Neighbours(aX,aY,aArea);
+    }
+    else
+    {
+        mIndices = fAllIndices8Neighbours(aX,aY,aArea);
+    }
+
+    MatrixXi mAllowed = MatrixXi::Zero(iNearestNeighbours,2);
 
     int k = 0;
-    for (int i = 0; i < 4; i++)
+    for (int i = 0; i < iNearestNeighbours; i++)
     {
         if(aArea(mIndices(i,0),mIndices(i,1))==0)
         {
@@ -364,6 +385,7 @@ MatrixXi fFindAnyVacant(const int aX, const int aY, MatrixXi &aArea)
         }
     }
     mAllowed.conservativeResize(k,2);
+
     return mAllowed;
 }
 
@@ -386,9 +408,9 @@ MatrixXi fAllowedActive(const int aX, const int aY, const int iMove, MatrixXi &a
     {
         if (iMove == 0)
         {
+
             if (fActiveConnected(aX, aY, mAllowed(i,0), mAllowed(i,1), 0, aArea)==1)
             {
-
                 mFeasible(k,0) = mAllowed(i,0);
                 mFeasible(k,1) = mAllowed(i,1);
                 k++;
@@ -397,6 +419,7 @@ MatrixXi fAllowedActive(const int aX, const int aY, const int iMove, MatrixXi &a
         }
         else
         {
+
             if (fActiveConnected(aX, aY, mAllowed(i,0), mAllowed(i,1), 1, aArea)==1)
             {
 
@@ -417,7 +440,6 @@ void fCreateRandomEpithelium(const int iNumEpithelium, int iXstart, int iYstart,
 {
     // Create an epithelium cell in the middle
     CreateEpithelium(iXstart,iYstart,aArea,aEpitheliumLocation,aCell,aTotals);
-
     MatrixXi mAllowed;
     int cCount = 0;
     int iOldXstart = iXstart;
@@ -540,12 +562,11 @@ return A;
 
 MatrixXd fFieldUpdate(const MatrixXi &aArea, const cellHolders &aCell, const areaParams & aAreaParams)
 {
-    int iSize = aArea.rows();
-    SpMatrix A = Laplace(iSize);
 
+    int iSize = aArea.rows();
     double dDg = aAreaParams.dDg;
     double dGamma = aAreaParams.dGamma;
-
+    SpMatrix A = mA;
 
     // Go through the epithelium and amend the Laplacian in the correct spots
     vector<epithelium> aVector = aCell.groupEpithelium;
@@ -570,8 +591,11 @@ MatrixXd fFieldUpdate(const MatrixXi &aArea, const cellHolders &aCell, const are
     }
 
     // Now solving for the GDNF concentration
-    SimplicialLLT<SparseMatrix<double>> solver;
-    MatrixXd vGDNF = solver.compute(A).solve(b);
+        solver.factorize(A);
+        MatrixXd vGDNF = solver.solve(b);
+//        solver.compute(A).solve(b);
+//        MatrixXd vGDNF = solver.compute(A).solve(b);
+
 
     // Now going through and folding the vector into a matrix
     MatrixXd mGDNF = MatrixXd::Zero(iSize,iSize);
@@ -594,8 +618,7 @@ void fUpdateEpithelium(const MatrixXd &mGDNF, MatrixXi &aArea, cellHolders &aCel
 
     //Create a randomly sorted vector of the epithelium
     vector<epithelium> & aVector = aCell.groupEpithelium;
-
-//    random_shuffle(aVector.begin(),aVector.end());
+    random_shuffle(aVector.begin(),aVector.end());
     int iX, iY, iMove;
     int iLength = aVector.size();
     //Use a static for loop rather than an iterator, since we are changing its length
@@ -629,11 +652,20 @@ void fUpdateEpithelium(const MatrixXd &mGDNF, MatrixXi &aArea, cellHolders &aCel
 // meaning either they are vacant/mesenchyme and active
 MatrixXi fAllowedActiveEpithelium(const int aX, const int aY, const int iMove, MatrixXi &aArea)
 {
-    MatrixXi mAllowed = fAllIndices4Neighbours(aX,aY,aArea);
-    MatrixXi mFeasible = MatrixXi::Zero(4,2);
+    MatrixXi mAllowed;
+    if (iNearestNeighbours == 4)
+    {
+        mAllowed = fAllIndices4Neighbours(aX,aY,aArea);
+    }
+    else
+    {
+        mAllowed = fAllIndices8Neighbours(aX,aY,aArea);
+    }
+
+    MatrixXi mFeasible = MatrixXi::Zero(iNearestNeighbours,2);
     int k = 0;
 
-    for (int i = 0; i < 4; ++i)
+    for (int i = 0; i < iNearestNeighbours; ++i)
     {
         if (iMove == 1)
         {
@@ -796,7 +828,6 @@ void fMoveProlifEpithelium(int iX, int iY, int iMove,MatrixXi &aArea, const area
             vector<mesenchyme>::iterator it = find_if(aMesenchymeGroup.begin(),aMesenchymeGroup.end(), bind2nd(IsSameMesenchyme(),aPair));
             mesenchyme aMesenchyme = *it;
             aMesenchyme.Move(bX,bY,mMesenchymeVacant(aRandInt,0),mMesenchymeVacant(aRandInt,1),aArea);
-//            cout<<"A mesenchyme is moving\n";
             return;
         }
     }
@@ -850,5 +881,80 @@ void WriteVectorToFile(vector<T> aVector ,string aFilename, int iNumComponents)
     }
     fileTemp.close();os.str("");
 }
+
+template<typename T>
+void WriteToFile(T aThing ,string aFilename)
+{
+    ostringstream os;
+    ofstream fileTemp;
+    os<<aFilename;
+    fileTemp.open(os.str().c_str());
+    fileTemp<<aThing;
+    fileTemp.close();os.str("");
+}
+
+SpMatrix LaplaceNeumann(int m)
+{
+    const int n = m*m, n0 = n - 1, n_m = n - m, m0 = m - 1,
+    NumNonZeros = 5*n;
+
+    SpMatrix A(n,n);
+    A.reserve(Eigen::VectorXi::Constant(n,5));
+//    cout<<NumNonZeros<<"\n";
+
+    for (int j = 0; j < n; j++)
+    {
+        //Diagonals
+        A.insert(j,j) = 4;
+        if (j > 0 && (j < m0 || j > n - m)) //First block diagonal
+        {
+            A.coeffRef(j,j) = 3;
+        }
+        if (j == m0 || j == n - m)
+        {
+            A.coeffRef(j,j) = 2;
+        }
+        if (j > m0 && (j+1)%m == 0)
+        {
+            A.coeffRef(j,j) = 3;
+        }
+        if (j > m0 && j%m == 0 && j < n - m)
+        {
+            A.coeffRef(j,j) = 3;
+        }
+
+        if (j == 0 || j == n0) //First and last
+        {
+            A.coeffRef(j,j) = 2;
+        }
+
+        //Near diagonals
+        if (j > 0 && j%m!=0)
+        {
+            A.insert(j,j-1) = -1;
+            A.insert(j-1,j) = -1;
+        }
+
+        //Far diagonals
+        if (j >= m)
+        {
+            A.insert(j,j-m) = -1;
+            A.insert(j-m,j) = -1;
+        }
+
+//        if (j >= m)
+//            {
+//                A.insert(j,j-m) = c; A.insert(j-m,j) = c;
+//            }
+//        if (j > 0 && j%m != 0) A.insert(j-1,j) = b;
+//        A.insert(j,j) = d;
+//        if (j < n0 && (j+1)%m != 0) A.insert(j+1,j) = b;
+
+    }
+
+return A;
+}
+
+//MatrixXd fSolveSystemOld()
 
 #endif // FUNCTIONS_H_INCLUDED

@@ -3,7 +3,7 @@ clear; close all; clc;
 vm_cell = load('Results-CellLocations.txt');
 vm_GDNF = load('Results-GDNF.txt');
 cSize = 100;
-cT = 100;
+cT = 50;
 cell_cells = cell(cT,1);
 cell_GDNF = cell(cT,1);
 
@@ -15,6 +15,7 @@ end
 
 for t = 1:t
     subplot(1,2,1),imagesc(cell_cells{t})
-    subplot(1,2,2),imagesc(cell_GDNF{t})
-    pause(0.1)
+    m_GDNF = cell_GDNF{t};
+    subplot(1,2,2),imagesc(m_GDNF)
+    pause(0.01)
 end

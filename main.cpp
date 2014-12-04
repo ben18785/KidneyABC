@@ -1,7 +1,7 @@
 #include "functions.h"
 
 // Declare global variables
-const int U = 100;
+extern const int U = 100;
 areaParams aAreaParams;
 cellHolders cell;
 epitheliumLocations aEpLocation;
@@ -18,20 +18,26 @@ int main()
     vector<MatrixXi> aMovieHolderCell;
     vector<MatrixXd> aMovieHolderGDNF;
 
+    int iFrameRate = 2;
     int iT = 100;
     for (int t = 0; t < iT; ++t)
     {
         cout<<t<<"\n";
         fUpdateEpithelium(mGDNF,mArea,cell,aAreaParams,aEpLocation,aTotals);
-        mGDNF = fFieldUpdate(mArea,cell,aAreaParams);
-        aMovieHolderCell.push_back(mArea);
-        aMovieHolderGDNF.push_back(mGDNF);
+        if (t%iFrameRate == 0)
+        {
+            mGDNF = fFieldUpdate(mArea,cell,aAreaParams);
+            aMovieHolderCell.push_back(mArea);
+            aMovieHolderGDNF.push_back(mGDNF);
+        }
     }
 
     string fileNameCell = "Results-CellLocations.txt";
     string fileNameGDNF = "Results-GDNF.txt";
-    WriteVectorToFile(aMovieHolderCell,fileNameCell, iT);
-    WriteVectorToFile(aMovieHolderGDNF,fileNameGDNF, iT);
+    WriteVectorToFile(aMovieHolderCell,fileNameCell, iT/iFrameRate);
+    WriteVectorToFile(aMovieHolderGDNF,fileNameGDNF, iT/iFrameRate);
+
+
 
     return 0;
 }
